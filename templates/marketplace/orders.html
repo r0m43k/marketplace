@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Orders — MRKT{% endblock %}
+{% block content %}
+<div class="page-container">
+  <h1 class="page-title">Your Orders</h1>
+
+  {% if orders %}
+    {% for order in orders %}
+      <div class="order-card">
+        <div class="order-header">
+          <span class="order-id">Order #{{ order.pk }}</span>
+          <span>{{ order.created_at|date:"d M Y" }}</span>
+          <span class="status-badge status-{{ order.status }}">{{ order.get_status_display }}</span>
+        </div>
+        <div class="order-items">
+          {% for item in order.items.all %}
+            <div class="order-item-row">
+              <span>{{ item.product.title|default:"[deleted]" }} × {{ item.quantity }}</span>
+              <span>${{ item.price_at_purchase }}</span>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="order-total">${{ order.total }}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">📦</div>
+      <div class="empty-text">No orders yet</div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
