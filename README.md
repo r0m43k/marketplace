@@ -9,8 +9,7 @@ export DB_USER= {{ secrets.EXAMPLE_VAR }}
 export DB_PASSWORD= {{ secrets.EXAMPLE_VAR }}
 
 python manage.py migrate
-python manage.py createsuperuser  
-python manage.py loaddata initial_data  
+python manage.py createsuperuser
 python manage.py runserver
 ```
 
