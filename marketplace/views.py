@@ -62,6 +62,15 @@ def product_detail(request, pk):
     })
 
 @login_required
+def cart(request):
+    items = request.user.cart.select_related("product").all()
+    total = sum(item.subtotal() for item in items)
+    return render(request, "marketplace/cart.html", {
+        "items": items,
+        "total": total,
+    })
+
+@login_required
 @require_POST
 def cart_add(request, product_pk):
     product = get_object_or_404(Product, pk=product_pk, is_active=True)
