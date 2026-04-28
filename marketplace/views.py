@@ -73,9 +73,14 @@ def cart(request):
 def cart_add(request, product_pk):
     product = get_object_or_404(Product, pk=product_pk, is_active=True)
     item, created = CartItem.objects.get_or_create(user=request.user, product=product)
+    if item.quantity >= product.stock:
+        messages.error(request, "Not enough stock")
+        return redirect("product", pk=product.pk)
+
     if not created:
         item.quantity += 1
-        item.save()
+
+    item.save()
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return JsonResponse({"count": request.user.cart.count()})
     return redirect("cart")
@@ -94,6 +99,14 @@ def checkout(request):
         return redirect("cart")
 
     if request.method == "POST":
+        for item in items:
+            if item.quantity > item.product.stock:
+                messages.error(
+                    request,
+                    f"Not enough stock for {item.product.title}"
+                )
+                return redirect("cart")
+
         total = sum(i.subtotal() for i in items)
         order = Order.objects.create(buyer=request.user, total=total, status="paid")
         for item in items:
