@@ -62,27 +62,31 @@ def product_detail(request, pk):
     })
 
 @login_required
-def cart(request):
-    items = request.user.cart.select_related("product").all()
-    total = sum(item.subtotal() for item in items)
-    return render(request, "marketplace/cart.html", {"items": items, "total": total})
-
-
-@login_required
 @require_POST
 def cart_add(request, product_pk):
     product = get_object_or_404(Product, pk=product_pk, is_active=True)
-    item, created = CartItem.objects.get_or_create(user=request.user, product=product)
-    if item.quantity >= product.stock:
-        messages.error(request, "Not enough stock")
+
+    if product.stock <= 0:
+        messages.error(request, "Out of stock")
         return redirect("product", pk=product.pk)
 
-    if not created:
-        item.quantity += 1
+    item, created = CartItem.objects.get_or_create(
+        user=request.user,
+        product=product,
+    )
 
-    item.save()
+    if not created:
+        if item.quantity >= product.stock:
+            messages.error(request, "Not enough stock")
+            return redirect("product", pk=product.pk)
+
+        item.quantity += 1
+        item.save()
+
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        return JsonResponse({"count": request.user.cart.count()})
+        count = sum(i.quantity for i in request.user.cart.all())
+        return JsonResponse({"count": count})
+
     return redirect("cart")
 
 
@@ -101,10 +105,7 @@ def checkout(request):
     if request.method == "POST":
         for item in items:
             if item.quantity > item.product.stock:
-                messages.error(
-                    request,
-                    f"Not enough stock for {item.product.title}"
-                )
+                messages.error(request, f"Not enough stock for {item.product.title}")
                 return redirect("cart")
 
         total = sum(i.subtotal() for i in items)
@@ -116,7 +117,6 @@ def checkout(request):
                 quantity=item.quantity,
                 price_at_purchase=item.product.price,
             )
-            # decrement stock
             item.product.stock = max(0, item.product.stock - item.quantity)
             item.product.save()
         items.delete()
