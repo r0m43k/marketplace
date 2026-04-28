@@ -9,8 +9,8 @@ export DB_USER= {{ secrets.EXAMPLE_VAR }}
 export DB_PASSWORD= {{ secrets.EXAMPLE_VAR }}
 
 python manage.py migrate
-python manage.py createsuperuser        # optional admin
-python manage.py loaddata initial_data  # seed categories (optional)
+python manage.py createsuperuser  
+python manage.py loaddata initial_data  
 python manage.py runserver
 ```
 
@@ -22,8 +22,8 @@ marketplace/
 │   ├── settings.py
 │   └── urls.py
 ├── marketplace/
-│   ├── models.py    — Product, Category, CartItem, Order, Review
-│   ├── views.py     — all page & API views
+│   ├── models.py
+│   ├── views.py
 │   └── urls.py
 ├── static/
 │   ├── css/main.css
@@ -31,8 +31,8 @@ marketplace/
 ├── templates/
 │   ├── base.html
 │   ├── marketplace/
-│   │   ├── index.html      — product grid + search + filters
-│   │   ├── product.html    — detail + add to cart + reviews
+│   │   ├── index.html     
+│   │   ├── product.html   
 │   │   ├── cart.html
 │   │   ├── checkout.html
 │   │   ├── orders.html
