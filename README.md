@@ -1,55 +1,30 @@
-# marketplace
-Stack: k8s + Docker + Django + PostgreSQL
+# Marketplace
 
-```bash
-pip install -r requirements.txt
+Django marketplace
 
-export DB_NAME= {{ secrets.EXAMPLE_VAR }}
-export DB_USER= {{ secrets.EXAMPLE_VAR }}
-export DB_PASSWORD= {{ secrets.EXAMPLE_VAR }}
+## Stack
 
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py runserver
-```
-
-## Structure
-
-```
-marketplace/
-├── config/
-│   ├── settings.py
-│   └── urls.py
-├── marketplace/
-│   ├── models.py
-│   ├── views.py
-│   └── urls.py
-├── static/
-│   ├── css/main.css
-│   └── js/main.js
-├── templates/
-│   ├── base.html
-│   ├── marketplace/
-│   │   ├── index.html     
-│   │   ├── product.html   
-│   │   ├── cart.html
-│   │   ├── checkout.html
-│   │   ├── orders.html
-│   │   └── sell.html
-│   └── registration/
-│       ├── login.html
-│       └── register.html
-└── requirements.txt
-```
+- Django / PostgreSQL
+- Docker / Docker Compose
+- Kubernetes / Helm
+- Nginx Ingress
+- GitHub Actions
+- Terraform / Ansible
+- Prometheus / Grafana
+- Loki / Promtail
+- RabbitMQ / Celery
+- MinIO / S3
 
 ## Features
 
-- Browse & search products by keyword
-- Filter by category, sort by price / date
-- Product detail with image, seller info, stock count
-- Add to cart (AJAX counter update)
-- Checkout → creates Order, decrements stock
-- Order history with status badges
-- Review system (1–5 stars + text, one per user per product)
-- Sell: any logged-in user can list products
-- Auth: register / login / logout
+- User authentication
+- Product catalog
+- Search and filters
+- Cart and checkout
+- Orders
+- Reviews
+- Seller product listing
+
+## Goal
+
+The project demonstrates how a Django application can be containerized, deployed to Kubernetes, automated with CI/CD, monitored, logged, and prepared for cloud-native production environments
