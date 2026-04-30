@@ -1,201 +1,204 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth import login, logout, authenticate
-from django.contrib.auth.models import User
-from django.contrib import messages
-from django.db.models import Q, Avg
-from django.http import JsonResponse
-from django.views.decorators.http import require_POST
-import json
+from rest_framework import permissions, status, viewsets
+from rest_framework.authtoken.models import Token
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django.db import transaction
+from django.db.models import Q
 
-from .models import Product, Category, CartItem, Order, OrderItem, Review
+from .models import CartItem, Category, Order, OrderItem, Product, Review
+from .serializers import (
+    CartItemSerializer,
+    CategorySerializer,
+    OrderSerializer,
+    ProductSerializer,
+    RegisterSerializer,
+    ReviewSerializer,
+    UserSerializer,
+)
 
-def index(request):
-    query = request.GET.get("q", "")
-    category_slug = request.GET.get("category", "")
-    sort = request.GET.get("sort", "new")
 
-    products = Product.objects.filter(is_active=True).select_related("seller", "category")
+class IsSellerOrReadOnly(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return obj.seller == request.user
 
-    if query:
-        products = products.filter(
-            Q(title__icontains=query) | Q(description__icontains=query)
+
+class StaffWriteOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return request.user.is_authenticated and request.user.is_staff
+
+
+class IsAuthorOrReadOnly(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return obj.author == request.user
+
+
+class RegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response(
+            {"user": UserSerializer(user).data, "token": token.key},
+            status=status.HTTP_201_CREATED,
         )
-    if category_slug:
-        products = products.filter(category__slug=category_slug)
-
-    sort_map = {
-        "new": "-created_at",
-        "price_asc": "price",
-        "price_desc": "-price",
-    }
-    products = products.order_by(sort_map.get(sort, "-created_at"))
-
-    categories = Category.objects.all()
-    cart_count = request.user.cart.count() if request.user.is_authenticated else 0
-
-    return render(request, "marketplace/index.html", {
-        "products": products,
-        "categories": categories,
-        "query": query,
-        "selected_category": category_slug,
-        "sort": sort,
-        "cart_count": cart_count,
-    })
-
-def product_detail(request, pk):
-    product = get_object_or_404(Product, pk=pk, is_active=True)
-    reviews = product.reviews.select_related("author").order_by("-created_at")
-    user_review = None
-    in_cart = False
-
-    if request.user.is_authenticated:
-        user_review = reviews.filter(author=request.user).first()
-        in_cart = CartItem.objects.filter(user=request.user, product=product).exists()
-
-    return render(request, "marketplace/product.html", {
-        "product": product,
-        "reviews": reviews,
-        "user_review": user_review,
-        "in_cart": in_cart,
-        "avg_rating": product.avg_rating(),
-    })
-
-@login_required
-def cart(request):
-    items = request.user.cart.select_related("product").all()
-    total = sum(item.subtotal() for item in items)
-    return render(request, "marketplace/cart.html", {
-        "items": items,
-        "total": total,
-    })
-
-@login_required
-@require_POST
-def cart_add(request, product_pk):
-    product = get_object_or_404(Product, pk=product_pk, is_active=True)
-
-    if product.stock <= 0:
-        messages.error(request, "Out of stock")
-        return redirect("product", pk=product.pk)
-
-    item, created = CartItem.objects.get_or_create(
-        user=request.user,
-        product=product,
-    )
-
-    if not created:
-        if item.quantity >= product.stock:
-            messages.error(request, "Not enough stock")
-            return redirect("product", pk=product.pk)
-
-        item.quantity += 1
-        item.save()
-
-    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        count = sum(i.quantity for i in request.user.cart.all())
-        return JsonResponse({"count": count})
-
-    return redirect("cart")
 
 
-@login_required
-@require_POST
-def cart_remove(request, item_pk):
-    CartItem.objects.filter(pk=item_pk, user=request.user).delete()
-    return redirect("cart")
+class MeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
 
-@login_required
-def checkout(request):
-    items = request.user.cart.select_related("product").all()
-    if not items:
-        return redirect("cart")
+    def get(self, request):
+        return Response(UserSerializer(request.user).data)
 
-    if request.method == "POST":
-        for item in items:
-            if item.quantity > item.product.stock:
-                messages.error(request, f"Not enough stock for {item.product.title}")
-                return redirect("cart")
 
-        total = sum(i.subtotal() for i in items)
-        order = Order.objects.create(buyer=request.user, total=total, status="paid")
-        for item in items:
-            OrderItem.objects.create(
-                order=order,
-                product=item.product,
-                quantity=item.quantity,
-                price_at_purchase=item.product.price,
+class CategoryViewSet(viewsets.ModelViewSet):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    permission_classes = [StaffWriteOrReadOnly]
+    lookup_field = "slug"
+
+
+class ProductViewSet(viewsets.ModelViewSet):
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsSellerOrReadOnly]
+
+    def get_queryset(self):
+        queryset = Product.objects.select_related("seller", "category").filter(is_active=True)
+        query = self.request.query_params.get("q")
+        category = self.request.query_params.get("category")
+        seller = self.request.query_params.get("seller")
+        sort = self.request.query_params.get("sort", "-created_at")
+
+        if query:
+            queryset = queryset.filter(Q(title__icontains=query) | Q(description__icontains=query))
+        if category:
+            queryset = queryset.filter(category__slug=category)
+        if seller:
+            queryset = queryset.filter(seller__username=seller)
+
+        allowed_sort = {"created_at", "-created_at", "price", "-price", "title", "-title"}
+        if sort in allowed_sort:
+            queryset = queryset.order_by(sort)
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(seller=self.request.user)
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=["is_active"])
+
+
+class CartItemViewSet(viewsets.ModelViewSet):
+    serializer_class = CartItemSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return self.request.user.cart_items.select_related("product", "product__seller", "product__category")
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        product = serializer.validated_data["product"]
+        quantity = serializer.validated_data.get("quantity", 1)
+
+        item, created = CartItem.objects.get_or_create(
+            user=request.user,
+            product=product,
+            defaults={"quantity": quantity},
+        )
+        if not created:
+            item.quantity += quantity
+            if item.quantity > product.stock:
+                return Response(
+                    {"detail": "Requested quantity is greater than stock."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            item.save(update_fields=["quantity"])
+
+        return Response(self.get_serializer(item).data, status=status.HTTP_201_CREATED)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class OrderViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return self.request.user.orders.prefetch_related("items__product")
+
+    @action(detail=False, methods=["post"])
+    def checkout(self, request):
+        with transaction.atomic():
+            items = list(
+                request.user.cart_items.select_related("product").select_for_update()
             )
-            item.product.stock = max(0, item.product.stock - item.quantity)
-            item.product.save()
-        items.delete()
-        messages.success(request, f"Order #{order.pk} placed successfully!")
-        return redirect("orders")
+            if not items:
+                return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
 
-    total = sum(i.subtotal() for i in items)
-    return render(request, "marketplace/checkout.html", {"items": items, "total": total})
+            product_ids = [item.product_id for item in items]
+            products = Product.objects.select_for_update().in_bulk(product_ids)
 
-@login_required
-def orders(request):
-    user_orders = request.user.orders.prefetch_related("items__product").order_by("-created_at")
-    return render(request, "marketplace/orders.html", {"orders": user_orders})
+            for item in items:
+                product = products[item.product_id]
+                if not product.is_active:
+                    return Response({"detail": f"{product.title} is not active."}, status=status.HTTP_400_BAD_REQUEST)
+                if item.quantity > product.stock:
+                    return Response({"detail": f"Not enough stock for {product.title}."}, status=status.HTTP_400_BAD_REQUEST)
 
-@login_required
-def sell(request):
-    categories = Category.objects.all()
-    if request.method == "POST":
-        Product.objects.create(
-            seller=request.user,
-            category=get_object_or_404(Category, pk=request.POST.get("category")),
-            title=request.POST["title"],
-            description=request.POST["description"],
-            price=request.POST["price"],
-            stock=request.POST.get("stock", 1),
-            image_url=request.POST.get("image_url", ""),
+            total = sum(item.quantity * products[item.product_id].price for item in items)
+            order = Order.objects.create(buyer=request.user, total=total)
+
+            for item in items:
+                product = products[item.product_id]
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=item.quantity,
+                    price_at_purchase=product.price,
+                )
+                product.stock -= item.quantity
+                product.save(update_fields=["stock"])
+
+            request.user.cart_items.all().delete()
+
+        return Response(OrderSerializer(order, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+
+class ReviewViewSet(viewsets.ModelViewSet):
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsAuthorOrReadOnly]
+
+    def get_queryset(self):
+        queryset = Review.objects.select_related("author", "product")
+        product_id = self.request.query_params.get("product")
+        if product_id:
+            queryset = queryset.filter(product_id=product_id)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        review, _ = Review.objects.update_or_create(
+            product=serializer.validated_data["product"],
+            author=request.user,
+            defaults={
+                "rating": serializer.validated_data["rating"],
+                "text": serializer.validated_data.get("text", ""),
+            },
         )
-        messages.success(request, "Product listed!")
-        return redirect("index")
-    return render(request, "marketplace/sell.html", {"categories": categories})
+        return Response(self.get_serializer(review).data, status=status.HTTP_201_CREATED)
 
-@login_required
-@require_POST
-def review_add(request, product_pk):
-    product = get_object_or_404(Product, pk=product_pk)
-    Review.objects.update_or_create(
-        product=product,
-        author=request.user,
-        defaults={
-            "rating": int(request.POST.get("rating", 5)),
-            "text": request.POST.get("text", ""),
-        },
-    )
-    return redirect("product", pk=product_pk)
-
-def login_view(request):
-    if request.method == "POST":
-        user = authenticate(
-            request,
-            username=request.POST["username"],
-            password=request.POST["password"],
-        )
-        if user:
-            login(request, user)
-            return redirect(request.GET.get("next", "index"))
-        messages.error(request, "Invalid credentials")
-    return render(request, "registration/login.html")
-
-def register_view(request):
-    if request.method == "POST":
-        username = request.POST["username"]
-        password = request.POST["password"]
-        if User.objects.filter(username=username).exists():
-            messages.error(request, "Username already taken")
-        else:
-            user = User.objects.create_user(username=username, password=password)
-            login(request, user)
-            return redirect("index")
-    return render(request, "registration/register.html")
-
-def logout_view(request):
-    logout(request)
-    return redirect("index")
+    def perform_update(self, serializer):
+        serializer.save(author=self.request.user)

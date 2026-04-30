@@ -1,17 +1,28 @@
-from django.urls import path
-from . import views
+from django.urls import include, path
+from rest_framework.authtoken.views import obtain_auth_token
+from rest_framework.routers import DefaultRouter
+
+from .views import (
+    CartItemViewSet,
+    CategoryViewSet,
+    MeView,
+    OrderViewSet,
+    ProductViewSet,
+    RegisterView,
+    ReviewViewSet,
+)
+
+
+router = DefaultRouter()
+router.register("categories", CategoryViewSet, basename="category")
+router.register("products", ProductViewSet, basename="product")
+router.register("cart", CartItemViewSet, basename="cart")
+router.register("orders", OrderViewSet, basename="order")
+router.register("reviews", ReviewViewSet, basename="review")
 
 urlpatterns = [
-    path("", views.index, name="index"),
-    path("product/<int:pk>/", views.product_detail, name="product"),
-    path("sell/", views.sell, name="sell"),
-    path("cart/", views.cart, name="cart"),
-    path("cart/add/<int:product_pk>/", views.cart_add, name="cart_add"),
-    path("cart/remove/<int:item_pk>/", views.cart_remove, name="cart_remove"),
-    path("checkout/", views.checkout, name="checkout"),
-    path("orders/", views.orders, name="orders"),
-    path("review/<int:product_pk>/", views.review_add, name="review_add"),
-    path("login/", views.login_view, name="login"),
-    path("register/", views.register_view, name="register"),
-    path("logout/", views.logout_view, name="logout"),
+    path("auth/register/", RegisterView.as_view(), name="auth-register"),
+    path("auth/token/", obtain_auth_token, name="auth-token"),
+    path("auth/me/", MeView.as_view(), name="auth-me"),
+    path("", include(router.urls)),
 ]
