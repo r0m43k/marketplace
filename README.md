@@ -2,6 +2,21 @@
 
 Django + React marketplace project.
 
+## Stack
+
+- Python / Django / Django REST Framework
+- PostgreSQL
+- React / Vite
+- Nginx
+- Docker / Docker Compose
+- Kubernetes / Helm
+- GitHub Actions
+- Terraform / Ansible
+- Prometheus / Grafana
+- Loki / Promtail
+- RabbitMQ / Celery
+- MinIO / S3
+
 ## Step 1: Backend Code Was Created
 
 Backend is written with Django and Django REST Framework.
@@ -237,3 +252,62 @@ CI jobs:
 - docker: validate Docker Compose and build Docker images
 
 The workflow runs on pull requests and pushes to `main` or `master`.
+
+## Step 9: Kubernetes Base Manifests Were Added
+
+Base Kubernetes manifests were added to:
+
+```text
+deploy/k8s/
+```
+
+Files:
+
+- `namespace.yaml` - project namespace
+- `configmap.yaml` - non-secret backend configuration
+- `secret.example.yaml` - example secret values
+- `postgres.yaml` - PostgreSQL Service and StatefulSet
+- `migration-job.yaml` - one-off Django migration Job
+- `backend.yaml` - Django backend Service and Deployment
+- `frontend.yaml` - React/Nginx frontend Service and Deployment
+- `ingress.yaml` - external HTTP route
+- `kustomization.yaml` - apply all manifests with Kustomize
+
+Default local Kubernetes images:
+
+```text
+marketplace-backend:latest
+marketplace-frontend:latest
+```
+
+For a real cluster, replace them with registry images, for example:
+
+```text
+ghcr.io/your-org/marketplace-backend:latest
+ghcr.io/your-org/marketplace-frontend:latest
+```
+
+Apply all manifests:
+
+```bash
+kubectl apply -k deploy/k8s
+```
+
+Run migrations again after changing backend models:
+
+```bash
+kubectl delete job marketplace-migrate -n marketplace --ignore-not-found
+kubectl apply -f deploy/k8s/migration-job.yaml
+```
+
+Check rollout:
+
+```bash
+kubectl get pods -n marketplace
+kubectl get svc -n marketplace
+kubectl get ingress -n marketplace
+```
+
+If using `marketplace.local`, add it to local hosts file and point it to the Ingress controller IP.
+
+For production, do not use `secret.example.yaml` as-is. Create a real Kubernetes Secret with a strong `SECRET_KEY` and database password.
