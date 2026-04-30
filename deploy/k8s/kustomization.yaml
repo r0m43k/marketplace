@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secret.example.yaml
   - postgres.yaml
   - migration-job.yaml
   - backend.yaml

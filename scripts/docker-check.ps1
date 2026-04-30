@@ -1,5 +1,7 @@
 $ErrorActionPreference = "Stop"
 
+& "$PSScriptRoot\check-tools.ps1"
+
 docker compose config
 docker compose build
 docker compose up -d postgres

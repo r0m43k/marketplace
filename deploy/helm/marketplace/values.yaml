@@ -1,0 +1,79 @@
+imagePullSecrets: []
+
+config:
+  debug: "False"
+  allowedHosts: "marketplace.local,backend,frontend"
+  csrfTrustedOrigins: "http://marketplace.local"
+  corsAllowedOrigins: "http://marketplace.local"
+  corsAllowCredentials: "False"
+  useXForwardedHost: "True"
+  secureSslRedirect: "False"
+  sessionCookieSecure: "False"
+  csrfCookieSecure: "False"
+  secureHstsSeconds: "0"
+  secureHstsIncludeSubdomains: "False"
+  secureHstsPreload: "False"
+  logLevel: "INFO"
+  dbEngine: "postgres"
+  dbName: "marketplace"
+  dbUser: "marketplace"
+  dbHost: "postgres"
+  dbPort: "5432"
+
+secret:
+  create: true
+  name: marketplace-secret
+  secretKey: "change-me-before-deploy"
+  dbPassword: "marketplace"
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+  storage:
+    size: 5Gi
+  resources: {}
+
+backend:
+  replicas: 2
+  image:
+    repository: marketplace-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    port: 8000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  migrationJob:
+    enabled: true
+    ttlSecondsAfterFinished: 3600
+
+frontend:
+  replicas: 2
+  image:
+    repository: marketplace-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+ingress:
+  enabled: true
+  className: ""
+  host: marketplace.local
+  annotations: {}
+  tls: []

@@ -10,3 +10,5 @@ staticfiles/
 frontend/node_modules/
 frontend/dist/
 frontend/.env.local
+deploy/k8s/secret.yaml
+*.kubeconfig

@@ -1,0 +1,68 @@
+name: Deploy Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy. Use a commit SHA or latest."
+        required: true
+        default: "latest"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Compute image names
+        id: images
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "backend=ghcr.io/${owner}/marketplace-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${owner}/marketplace-frontend" >> "$GITHUB_OUTPUT"
+
+      - name: Configure kubeconfig
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG_B64 }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Configure image overlay
+        shell: bash
+        run: |
+          overlay="deploy/k8s/overlays/ghcr/kustomization.yaml"
+          sed -i "s|ghcr.io/your-org/marketplace-backend|${{ steps.images.outputs.backend }}|g" "$overlay"
+          sed -i "s|ghcr.io/your-org/marketplace-frontend|${{ steps.images.outputs.frontend }}|g" "$overlay"
+          sed -i "s|newTag: latest|newTag: ${{ inputs.image_tag }}|g" "$overlay"
+
+      - name: Ensure namespace exists
+        run: kubectl apply -f deploy/k8s/namespace.yaml
+
+      - name: Verify runtime secret exists
+        run: kubectl get secret marketplace-secret -n marketplace
+
+      - name: Delete previous migration job
+        run: kubectl delete job marketplace-migrate -n marketplace --ignore-not-found
+
+      - name: Apply manifests
+        run: kubectl apply -k deploy/k8s/overlays/ghcr
+
+      - name: Wait for migration job
+        run: kubectl wait --for=condition=complete job/marketplace-migrate -n marketplace --timeout=180s
+
+      - name: Wait for deployments
+        run: |
+          kubectl rollout status deployment/backend -n marketplace --timeout=180s
+          kubectl rollout status deployment/frontend -n marketplace --timeout=180s

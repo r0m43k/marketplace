@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marketplace-config
+  labels:
+    {{- include "marketplace.labels" . | nindent 4 }}
+data:
+  DEBUG: {{ .Values.config.debug | quote }}
+  ALLOWED_HOSTS: {{ .Values.config.allowedHosts | quote }}
+  CSRF_TRUSTED_ORIGINS: {{ .Values.config.csrfTrustedOrigins | quote }}
+  CORS_ALLOWED_ORIGINS: {{ .Values.config.corsAllowedOrigins | quote }}
+  CORS_ALLOW_CREDENTIALS: {{ .Values.config.corsAllowCredentials | quote }}
+  USE_X_FORWARDED_HOST: {{ .Values.config.useXForwardedHost | quote }}
+  SECURE_SSL_REDIRECT: {{ .Values.config.secureSslRedirect | quote }}
+  SESSION_COOKIE_SECURE: {{ .Values.config.sessionCookieSecure | quote }}
+  CSRF_COOKIE_SECURE: {{ .Values.config.csrfCookieSecure | quote }}
+  SECURE_HSTS_SECONDS: {{ .Values.config.secureHstsSeconds | quote }}
+  SECURE_HSTS_INCLUDE_SUBDOMAINS: {{ .Values.config.secureHstsIncludeSubdomains | quote }}
+  SECURE_HSTS_PRELOAD: {{ .Values.config.secureHstsPreload | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  DB_ENGINE: {{ .Values.config.dbEngine | quote }}
+  DB_NAME: {{ .Values.config.dbName | quote }}
+  DB_USER: {{ .Values.config.dbUser | quote }}
+  DB_HOST: {{ .Values.config.dbHost | quote }}
+  DB_PORT: {{ .Values.config.dbPort | quote }}

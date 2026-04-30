@@ -250,6 +250,7 @@ CI jobs:
 - backend: install Python dependencies, run Django checks, verify migrations are committed
 - frontend: install Node dependencies and build React/Vite app
 - docker: validate Docker Compose and build Docker images
+- helm: lint and render the Helm chart
 
 The workflow runs on pull requests and pushes to `main` or `master`.
 
@@ -287,6 +288,16 @@ ghcr.io/your-org/marketplace-backend:latest
 ghcr.io/your-org/marketplace-frontend:latest
 ```
 
+Create namespace and runtime secret:
+
+```bash
+kubectl apply -f deploy/k8s/namespace.yaml
+kubectl create secret generic marketplace-secret \
+  -n marketplace \
+  --from-literal=SECRET_KEY=change-me \
+  --from-literal=DB_PASSWORD=marketplace
+```
+
 Apply all manifests:
 
 ```bash
@@ -311,3 +322,271 @@ kubectl get ingress -n marketplace
 If using `marketplace.local`, add it to local hosts file and point it to the Ingress controller IP.
 
 For production, do not use `secret.example.yaml` as-is. Create a real Kubernetes Secret with a strong `SECRET_KEY` and database password.
+
+## Step 10: Container Image Strategy Was Added
+
+Kubernetes now has a GHCR overlay:
+
+```text
+deploy/k8s/overlays/ghcr/kustomization.yaml
+```
+
+Base manifests keep local image names:
+
+```text
+marketplace-backend:latest
+marketplace-frontend:latest
+```
+
+The GHCR overlay rewrites them to registry images:
+
+```text
+ghcr.io/your-org/marketplace-backend:latest
+ghcr.io/your-org/marketplace-frontend:latest
+```
+
+Manual build and push example:
+
+```bash
+docker build -t ghcr.io/YOUR_USER/marketplace-backend:latest .
+docker build -t ghcr.io/YOUR_USER/marketplace-frontend:latest ./frontend
+docker push ghcr.io/YOUR_USER/marketplace-backend:latest
+docker push ghcr.io/YOUR_USER/marketplace-frontend:latest
+```
+
+Recommended image tags:
+
+- `latest` for quick test deploys
+- commit SHA for CI/CD deploys
+- semantic version tags for releases
+
+Apply the GHCR overlay after replacing `your-org` or after CI patches it:
+
+```bash
+kubectl apply -k deploy/k8s/overlays/ghcr
+```
+
+## Step 11: Container Image CI Was Added
+
+GitHub Actions workflow was added:
+
+```text
+.github/workflows/container-images.yml
+```
+
+It builds and pushes images to GitHub Container Registry:
+
+```text
+ghcr.io/<github-owner>/marketplace-backend:<commit-sha>
+ghcr.io/<github-owner>/marketplace-backend:latest
+ghcr.io/<github-owner>/marketplace-frontend:<commit-sha>
+ghcr.io/<github-owner>/marketplace-frontend:latest
+```
+
+The workflow runs on pushes to `main` or `master`, and can also be started manually.
+
+No extra registry token is required for GHCR in this repository because the workflow uses `GITHUB_TOKEN` with `packages: write`.
+
+For Kubernetes pulls, either make GHCR packages public or create an `imagePullSecret` in the cluster and patch deployments to use it. Private GHCR images without an `imagePullSecret` will fail with `ImagePullBackOff`.
+
+## Step 12: Manual Kubernetes Deploy Workflow Was Added
+
+Manual deploy workflow was added:
+
+```text
+.github/workflows/deploy-k8s.yml
+```
+
+It does not deploy automatically. It runs only through `workflow_dispatch`.
+
+Required GitHub secret:
+
+```text
+KUBE_CONFIG_B64
+```
+
+Create it from your kubeconfig:
+
+```bash
+base64 -w 0 ~/.kube/config
+```
+
+On Windows PowerShell:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.kube\config"))
+```
+
+Before running the deploy workflow, create the runtime Kubernetes Secret in the cluster:
+
+```bash
+kubectl apply -f deploy/k8s/namespace.yaml
+kubectl create secret generic marketplace-secret \
+  -n marketplace \
+  --from-literal=SECRET_KEY=change-me \
+  --from-literal=DB_PASSWORD=marketplace
+```
+
+Deploy a specific image tag from GitHub Actions by entering:
+
+```text
+image_tag=<commit-sha>
+```
+
+The workflow:
+
+- patches the GHCR overlay with the current repository owner
+- applies Kubernetes manifests
+- runs the migration Job
+- waits for backend and frontend rollouts
+
+## Step 13: Helm Chart Was Added
+
+A Helm chart was added:
+
+```text
+deploy/helm/marketplace/
+```
+
+Files:
+
+- `Chart.yaml` - chart metadata
+- `values.yaml` - default deploy values
+- `templates/configmap.yaml` - backend config
+- `templates/secret.yaml` - optional secret creation
+- `templates/postgres.yaml` - PostgreSQL Service and StatefulSet
+- `templates/backend.yaml` - backend Service and Deployment
+- `templates/frontend.yaml` - frontend Service and Deployment
+- `templates/migration-job.yaml` - migration Job as Helm hook
+- `templates/ingress.yaml` - ingress route
+
+Render chart locally:
+
+```bash
+helm template marketplace deploy/helm/marketplace --namespace marketplace
+```
+
+Lint chart:
+
+```bash
+helm lint deploy/helm/marketplace
+```
+
+The main CI workflow also lints and renders this chart.
+
+Install or upgrade:
+
+```bash
+helm upgrade --install marketplace deploy/helm/marketplace \
+  --namespace marketplace \
+  --create-namespace
+```
+
+Deploy GHCR images:
+
+```bash
+helm upgrade --install marketplace deploy/helm/marketplace \
+  --namespace marketplace \
+  --create-namespace \
+  --set backend.image.repository=ghcr.io/YOUR_USER/marketplace-backend \
+  --set backend.image.tag=latest \
+  --set frontend.image.repository=ghcr.io/YOUR_USER/marketplace-frontend \
+  --set frontend.image.tag=latest
+```
+
+Use an existing Kubernetes Secret instead of creating one from Helm values:
+
+```bash
+helm upgrade --install marketplace deploy/helm/marketplace \
+  --namespace marketplace \
+  --create-namespace \
+  --set secret.create=false \
+  --set secret.name=marketplace-secret
+```
+
+The migration Job runs as a `post-install,post-upgrade` Helm hook.
+
+## Step 14: Basic Observability Was Added
+
+Basic container-friendly observability was added.
+
+Backend:
+
+- Gunicorn access logs go to stdout
+- Gunicorn error logs go to stderr
+- Django logs go to console
+- log level is controlled with `LOG_LEVEL`
+
+Environment variable:
+
+```env
+LOG_LEVEL=INFO
+```
+
+Docker logs:
+
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f postgres
+```
+
+Kubernetes logs:
+
+```bash
+kubectl logs -n marketplace deployment/backend -f
+kubectl logs -n marketplace deployment/frontend -f
+kubectl logs -n marketplace statefulset/postgres -f
+```
+
+Health endpoints:
+
+```text
+/healthz/
+/api/products/
+```
+
+Kubernetes readiness and liveness probes are configured for:
+
+- backend
+- frontend
+- postgres
+
+Resource requests and limits are configured in both raw Kubernetes manifests and Helm values.
+
+## Step 15: Local Toolchain Validation
+
+Before running the project locally, check that required tools are available in your terminal:
+
+```powershell
+.\scripts\check-tools.ps1
+```
+
+Required local tools:
+
+- Docker Desktop with Docker Compose
+- Node.js and npm
+- kubectl
+- Helm
+
+Install them on Windows:
+
+```powershell
+.\scripts\install-tools-windows.ps1
+```
+
+If a tool was just installed on Windows and the command is still not found, close the terminal and open it again so `PATH` is reloaded.
+
+These local installations are not copied into CI/CD. GitHub Actions installs or provides tools on the runner:
+
+- Python through `actions/setup-python`
+- Node.js through `actions/setup-node`
+- Docker Buildx through `docker/setup-buildx-action`
+- Helm through `azure/setup-helm`
+- kubectl through `azure/setup-kubectl`
+
+After tools are visible locally, run the full Docker check:
+
+```powershell
+.\scripts\docker-check.ps1
+```
