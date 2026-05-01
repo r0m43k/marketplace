@@ -4,6 +4,8 @@ Django + React marketplace project.
 
 ## Stack
 
+Current repo stack:
+
 - Python / Django / Django REST Framework
 - PostgreSQL
 - React / Vite
@@ -11,9 +13,11 @@ Django + React marketplace project.
 - Docker / Docker Compose
 - Kubernetes / Helm
 - GitHub Actions
+
+Planned next infrastructure and platform additions:
+
 - Terraform / Ansible
-- Prometheus / Grafana
-- Loki / Promtail
+- Prometheus / Grafana / Loki / Promtail
 - RabbitMQ / Celery
 - MinIO / S3
 
@@ -259,7 +263,7 @@ The workflow runs on pull requests and pushes to `main` or `master`.
 Base Kubernetes manifests were added to:
 
 ```text
-deploy/k8s/
+deploy/k8s/base/
 ```
 
 Files:
@@ -291,7 +295,7 @@ ghcr.io/your-org/marketplace-frontend:latest
 Create namespace and runtime secret:
 
 ```bash
-kubectl apply -f deploy/k8s/namespace.yaml
+kubectl apply -f deploy/k8s/base/namespace.yaml
 kubectl create secret generic marketplace-secret \
   -n marketplace \
   --from-literal=SECRET_KEY=change-me \
@@ -308,7 +312,7 @@ Run migrations again after changing backend models:
 
 ```bash
 kubectl delete job marketplace-migrate -n marketplace --ignore-not-found
-kubectl apply -f deploy/k8s/migration-job.yaml
+kubectl apply -f deploy/k8s/base/migration-job.yaml
 ```
 
 Check rollout:
@@ -329,6 +333,12 @@ Kubernetes now has a GHCR overlay:
 
 ```text
 deploy/k8s/overlays/ghcr/kustomization.yaml
+```
+
+There is also a local Minikube overlay:
+
+```text
+deploy/k8s/overlays/minikube/kustomization.yaml
 ```
 
 Base manifests keep local image names:
@@ -420,7 +430,7 @@ On Windows PowerShell:
 Before running the deploy workflow, create the runtime Kubernetes Secret in the cluster:
 
 ```bash
-kubectl apply -f deploy/k8s/namespace.yaml
+kubectl apply -f deploy/k8s/base/namespace.yaml
 kubectl create secret generic marketplace-secret \
   -n marketplace \
   --from-literal=SECRET_KEY=change-me \
@@ -562,12 +572,22 @@ Before running the project locally, check that required tools are available in y
 .\scripts\check-tools.ps1
 ```
 
+On Linux or macOS:
+
+```bash
+sh scripts/check-tools.sh
+```
+
 Required local tools:
 
 - Docker Desktop with Docker Compose
 - Node.js and npm
 - kubectl
-- Helm
+- Minikube
+
+Optional local tool:
+
+- Helm for chart linting and Helm-based deploys
 
 Install them on Windows:
 
@@ -590,3 +610,84 @@ After tools are visible locally, run the full Docker check:
 ```powershell
 .\scripts\docker-check.ps1
 ```
+
+On Linux or macOS:
+
+```bash
+sh scripts/docker-check.sh
+```
+
+## Step 16: Local Kubernetes Cluster With Minikube
+
+Local Kubernetes bring-up is now scripted for Minikube.
+
+Scripts:
+
+- `scripts/k8s-local-start.sh` - start Minikube, build images inside it, apply the local overlay, and wait for rollout
+- `scripts/k8s-local-seed-demo.sh` - seed demo users, categories, products, and reviews in the running cluster
+- `scripts/k8s-local-stop.sh` - stop the Minikube profile
+
+The local overlay:
+
+- creates a development `marketplace-secret` automatically
+- reduces backend and frontend replicas to `1`
+- sets `ingressClassName: nginx`
+- expands local host and CORS settings for `marketplace.local` and `localhost`
+
+Recommended first run:
+
+```bash
+sh scripts/check-tools.sh
+sh scripts/k8s-local-start.sh
+```
+
+Add the Minikube IP to your local hosts file:
+
+```bash
+minikube -p marketplace ip
+```
+
+Add a line like:
+
+```text
+<minikube-ip> marketplace.local
+```
+
+Seed demo data:
+
+```bash
+sh scripts/k8s-local-seed-demo.sh
+```
+
+Check rollout:
+
+```bash
+kubectl get pods -n marketplace
+kubectl get ingress -n marketplace
+kubectl get svc -n marketplace
+```
+
+Open the app:
+
+```text
+http://marketplace.local/
+```
+
+Stop the local cluster:
+
+```bash
+sh scripts/k8s-local-stop.sh
+```
+
+## Step 17: Preparing For Yandex Cloud
+
+When you move from the local Minikube cluster to Yandex Cloud Kubernetes:
+
+- keep using the same app images and Kubernetes manifests
+- push images to GHCR or Yandex Container Registry
+- create the runtime `marketplace-secret` in the target namespace
+- apply `deploy/k8s/overlays/ghcr` or deploy the Helm chart with registry image overrides
+- install an ingress controller in the target cluster and point DNS to it
+- reuse `.github/workflows/deploy-k8s.yml` after updating `KUBE_CONFIG_B64` with the new kubeconfig
+
+The local Minikube overlay is only for local bring-up. For Yandex Cloud, use the base manifests plus a real secret and registry-backed image names.

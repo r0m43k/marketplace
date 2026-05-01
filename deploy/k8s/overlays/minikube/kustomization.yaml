@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: marketplace
+resources:
+  - ../../base
+generatorOptions:
+  disableNameSuffixHash: true
+secretGenerator:
+  - name: marketplace-secret
+    literals:
+      - SECRET_KEY=local-dev-secret-change-me
+      - DB_PASSWORD=marketplace
+patches:
+  - path: patch-backend.yaml
+  - path: patch-configmap.yaml
+  - path: patch-frontend.yaml
+  - path: patch-ingress.yaml

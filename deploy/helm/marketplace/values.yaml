@@ -34,7 +34,13 @@ postgres:
     pullPolicy: IfNotPresent
   storage:
     size: 5Gi
-  resources: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 backend:
   replicas: 2

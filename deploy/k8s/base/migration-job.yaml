@@ -9,6 +9,19 @@ spec:
   template:
     spec:
       restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - until pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"; do sleep 2; done
+          envFrom:
+            - configMapRef:
+                name: marketplace-config
+            - secretRef:
+                name: marketplace-secret
       containers:
         - name: migrate
           image: marketplace-backend:latest

@@ -1,10 +1,11 @@
 $tools = @(
-    @{ Name = "docker"; Command = "docker --version" },
-    @{ Name = "docker compose"; Command = "docker compose version" },
-    @{ Name = "node"; Command = "node --version" },
-    @{ Name = "npm"; Command = "npm --version" },
-    @{ Name = "kubectl"; Command = "kubectl version --client" },
-    @{ Name = "helm"; Command = "helm version" }
+    @{ Name = "docker"; Command = "docker --version"; Required = $true },
+    @{ Name = "docker compose"; Command = "docker compose version"; Required = $true },
+    @{ Name = "node"; Command = "node --version"; Required = $true },
+    @{ Name = "npm"; Command = "npm --version"; Required = $true },
+    @{ Name = "kubectl"; Command = "kubectl version --client" ; Required = $true },
+    @{ Name = "minikube"; Command = "minikube version"; Required = $true },
+    @{ Name = "helm"; Command = "helm version"; Required = $false }
 )
 
 $failed = $false
@@ -14,8 +15,12 @@ foreach ($tool in $tools) {
     try {
         Invoke-Expression $tool.Command
     } catch {
-        $failed = $true
-        Write-Output "Missing or not available in PATH: $($tool.Name)"
+        if ($tool.Required) {
+            $failed = $true
+            Write-Output "Missing or not available in PATH: $($tool.Name)"
+        } else {
+            Write-Output "Optional tool is missing or not available in PATH: $($tool.Name)"
+        }
     }
     Write-Output ""
 }
